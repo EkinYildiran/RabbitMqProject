@@ -59,7 +59,7 @@ namespace RabbitMqApi.Services
             }
         }
 
-        public async Task PublishAsync(OrderMessage order)     // dışarıdan bir order alır metodun adı da publish
+        public async Task PublishAsync(OrderMessage order, string routingKey)    // dışarıdan bir order ve routing key alır metodun adı da publish
         {
             try
             {
@@ -68,9 +68,11 @@ namespace RabbitMqApi.Services
                 using var channel =
                     await connection.CreateChannelAsync();     // bağlantı üzerinden mesaj göndereceğimiz bir channel açıyoruz
 
-                var queueName = _configuration["RabbitMQ:QueueName"]
-                    ?? throw new InvalidOperationException(
-                        "RabbitMQ QueueName ayarı bulunamadı.");
+                await channel.ExchangeDeclareAsync(
+                    exchange: "order_exchange",
+                    type: ExchangeType.Direct,
+                    durable: true
+                );
 
                 var json = JsonSerializer.Serialize(order);    // ordermessage nesnesini jsona çeviriyoruz
 
@@ -82,8 +84,8 @@ namespace RabbitMqApi.Services
                 };
 
                 await channel.BasicPublishAsync(               // yayınlama kısmı
-                    exchange: "",
-                    routingKey: queueName,
+                    exchange: "order_exchange",
+                    routingKey: routingKey,
                     mandatory: false,
                     basicProperties: properties,
                     body: body

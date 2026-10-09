@@ -6,9 +6,9 @@
 ![C#](https://img.shields.io/badge/C%23-Language-239120)
 ![Swagger](https://img.shields.io/badge/Swagger-OpenAPI-85EA2D)
 
-A messaging project built with **ASP.NET Core Web API**, **.NET 8**, **C#**, and **RabbitMQ**.
+A RabbitMQ messaging project developed with **ASP.NET Core Web API, .NET 8, C# and RabbitMQ**.
 
-The project demonstrates how an API can publish messages to RabbitMQ and how a separate Consumer application can receive, process, acknowledge, and route failed messages.
+The project demonstrates message publishing, routing, queue processing, retry mechanisms, dead-letter handling and controlled error management using RabbitMQ.
 
 ---
 
@@ -16,17 +16,29 @@ The project demonstrates how an API can publish messages to RabbitMQ and how a s
 
 ```mermaid
 flowchart TD
+
     A["🌐 Swagger / Client"] --> B["🧩 ASP.NET Core API"]
+
     B --> C["📦 OrdersController"]
     C --> D["🔌 IRabbitMqPublisher"]
     D --> E["📨 RabbitMqPublisher"]
-    E --> F["🐇 RabbitMQ"]
-    F --> G["📬 hello_queue"]
-    G --> H["⚙️ RabbitMqConsumer"]
 
-    H -->|Success| I["✅ ACK"]
-    H -->|Failure| J["❌ NACK"]
-    J --> K["🗃️ hello_queue_dlq"]
+    E --> F["🐇 order_exchange"]
+
+    F -->|"order.created"| G["📬 hello_queue"]
+    F -->|"order.notification"| H["🔔 notification_queue"]
+
+    G --> I["⚙️ Order Consumer"]
+    H --> J["⚙️ Notification Consumer"]
+
+    I --> K["🔄 ProcessOrderAsync"]
+    K -->|"Success"| L["✅ ACK"]
+    K -->|"Failure"| M["⏱️ Retry"]
+
+    M -->|"Max 3 attempts"| N["❌ NACK"]
+    N --> O["🗃️ hello_queue_dlq"]
+
+    J -->|"Success"| P["✅ ACK"]
 
     style A fill:#E3F2FD,stroke:#1E88E5,stroke-width:2px
     style B fill:#E8F5E9,stroke:#43A047,stroke-width:2px
@@ -36,9 +48,14 @@ flowchart TD
     style F fill:#FBE9E7,stroke:#FF6600,stroke-width:3px
     style G fill:#FFFDE7,stroke:#FDD835,stroke-width:2px
     style H fill:#E0F7FA,stroke:#00ACC1,stroke-width:2px
-    style I fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
-    style J fill:#FFEBEE,stroke:#E53935,stroke-width:2px
-    style K fill:#FBE9E7,stroke:#D84315,stroke-width:2px
+    style I fill:#E8F5E9,stroke:#43A047,stroke-width:2px
+    style J fill:#E0F2F1,stroke:#00897B,stroke-width:2px
+    style K fill:#FFF3E0,stroke:#FB8C00,stroke-width:2px
+    style L fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
+    style M fill:#FFF8E1,stroke:#F9A825,stroke-width:2px
+    style N fill:#FFEBEE,stroke:#E53935,stroke-width:2px
+    style O fill:#FBE9E7,stroke:#D84315,stroke-width:2px
+    style P fill:#E8F5E9,stroke:#2E7D32,stroke-width:2px
 ```
 
 ---
@@ -71,41 +88,68 @@ RabbitMqProject
 
 ---
 
-## 📦 Projects
+## 📌 Projects
 
-### RabbitMqApi
+### 🌐 RabbitMqApi
 
-ASP.NET Core Web API used as the main Producer.
+ASP.NET Core Web API responsible for publishing messages to RabbitMQ.
 
-Responsibilities:
+Main responsibilities:
 
-- Receive order data through HTTP requests
-- Publish messages to RabbitMQ
-- Serialize C# objects to JSON
-- Convert JSON data to byte arrays
+- Receive HTTP requests
+- Publish order messages
+- Publish notification messages
+- Serialize objects to JSON
+- Convert JSON to byte arrays
 - Reuse a shared RabbitMQ connection
-- Create channels for message publishing
-- Log successful and failed publish operations
+- Create channels for publishing
+- Use routing keys for message routing
+- Log successful and failed operations
+- Return `503 Service Unavailable` when RabbitMQ cannot be reached
 
-### RabbitMqConsumer
+---
 
-Console application responsible for receiving and processing messages.
+### ⚙️ RabbitMqConsumer
 
-Responsibilities:
+Console application responsible for consuming and processing RabbitMQ messages.
 
-- Listen to `hello_queue`
-- Receive messages from RabbitMQ
-- Convert byte data to JSON
-- Deserialize JSON into `OrderMessage`
-- Send `ACK` when processing succeeds
-- Send `NACK` when processing fails
-- Route failed messages to the Dead Letter Queue
+It contains two consumers:
 
-### RabbitMqProducer
+```text
+Order Consumer
+Notification Consumer
+```
 
-A simple Console Producer created during the learning and testing process.
+The Order Consumer:
 
-The final application uses **RabbitMqApi** as the main Producer.
+- Listens to `hello_queue`
+- Processes order messages
+- Uses a retry mechanism
+- Sends ACK after successful processing
+- Sends NACK after failed processing
+- Routes failed messages to the Dead Letter Queue
+
+The Notification Consumer:
+
+- Listens to `notification_queue`
+- Processes notification messages
+- Sends ACK after successful processing
+
+---
+
+### 📤 RabbitMqProducer
+
+A simple Console Producer created during the first stages of the project.
+
+It was used to learn and test:
+
+- RabbitMQ connections
+- Channels
+- JSON serialization
+- Message publishing
+- Persistent messages
+
+The main Producer in the final architecture is **RabbitMqApi**.
 
 ---
 
@@ -122,6 +166,7 @@ The final application uses **RabbitMqApi** as the main Producer.
 | System.Text.Json | JSON serialization |
 | Dependency Injection | Service management |
 | ILogger | Application logging |
+| SemaphoreSlim | Connection synchronization |
 
 ---
 
@@ -129,21 +174,25 @@ The final application uses **RabbitMqApi** as the main Producer.
 
 - Producer / Consumer architecture
 - ASP.NET Core Web API integration
-- RabbitMQ message publishing
-- RabbitMQ message consumption
+- RabbitMQ Direct Exchange
+- Routing Keys
+- Multiple Queues
+- Multiple Consumers
 - JSON serialization and deserialization
-- Durable Queue
+- Durable Queues
 - Persistent Messages
 - Manual ACK
 - Manual NACK
+- Retry mechanism
+- Retry delay
 - Dead Letter Queue
-- Multiple Consumer support
+- Prefetch / QoS
 - Dependency Injection
 - Interface-based service structure
 - Shared RabbitMQ connection
-- Channel-based publishing
 - SemaphoreSlim connection protection
-- Application logging
+- Logging
+- Controlled `503 Service Unavailable` response
 - Configuration through `appsettings.json`
 
 ---
@@ -161,7 +210,7 @@ public class OrderMessage
 }
 ```
 
-Example message:
+Example:
 
 ```json
 {
@@ -173,80 +222,292 @@ Example message:
 
 ---
 
-## 🔄 Message Flow
+## 🐇 Direct Exchange
+
+The project uses a Direct Exchange:
 
 ```text
-Swagger / Client
-        │
-        ▼
-ASP.NET Core API
-        │
-        ▼
-OrdersController
-        │
-        ▼
-IRabbitMqPublisher
-        │
-        ▼
-RabbitMqPublisher
-        │
-        ▼
-RabbitMQ
-        │
-        ▼
-hello_queue
-        │
-        ▼
-RabbitMqConsumer
-        │
-        ├──────── Success ───────► ACK ✅
-        │
-        └──────── Failure ───────► NACK ❌
-                                      │
-                                      ▼
-                               hello_queue_dlq
+order_exchange
+```
+
+The API publishes messages to this exchange.
+
+RabbitMQ routes each message according to its routing key.
+
+```text
+                       ┌── order.created ───────► hello_queue
+order_exchange ────────┤
+                       └── order.notification ──► notification_queue
 ```
 
 ---
 
-## ⚙️ RabbitMQ Configuration
+## 🔑 Routing Keys
 
-RabbitMQ configuration is stored in `appsettings.json`.
+Two routing keys are used:
 
-```json
-{
-  "RabbitMQ": {
-    "HostName": "localhost",
-    "QueueName": "hello_queue"
-  }
-}
+```text
+order.created
+order.notification
+```
+
+### order.created
+
+```text
+order_exchange
+      │
+      ▼
+order.created
+      │
+      ▼
+hello_queue
+      │
+      ▼
+Order Consumer
+```
+
+### order.notification
+
+```text
+order_exchange
+      │
+      ▼
+order.notification
+      │
+      ▼
+notification_queue
+      │
+      ▼
+Notification Consumer
 ```
 
 ---
 
 ## 📬 Queues
 
-### Main Queue
+### hello_queue
+
+Main queue used for order processing.
+
+```text
+order.created
+      ↓
+hello_queue
+      ↓
+Order Consumer
+```
+
+---
+
+### notification_queue
+
+Queue used for notification messages.
+
+```text
+order.notification
+        ↓
+notification_queue
+        ↓
+Notification Consumer
+```
+
+---
+
+### hello_queue_dlq
+
+Dead Letter Queue used for failed order messages.
 
 ```text
 hello_queue
+    ↓
+3 Failed Attempts
+    ↓
+NACK
+    ↓
+hello_queue_dlq
 ```
 
-Used for normal order messages.
+---
 
-### Dead Letter Queue
+## 🔄 Retry Mechanism
+
+Order messages are processed using a retry mechanism.
+
+A message can be processed a maximum of:
+
+```text
+3 attempts
+```
+
+Flow:
+
+```text
+1st attempt
+     │
+     ├── Success ──► ACK
+     │
+     └── Failure
+            │
+            ▼
+        Wait 2 seconds
+            │
+            ▼
+       2nd attempt
+            │
+            ├── Success ──► ACK
+            │
+            └── Failure
+                   │
+                   ▼
+               Wait 2 seconds
+                   │
+                   ▼
+              3rd attempt
+                   │
+                   ├── Success ──► ACK
+                   │
+                   └── Failure
+                          │
+                          ▼
+                        NACK
+                          │
+                          ▼
+                    Dead Letter Queue
+```
+
+The retry delay is implemented using:
+
+```csharp
+await Task.Delay(2000);
+```
+
+---
+
+## ✅ ACK
+
+When a message is processed successfully:
+
+```csharp
+await channel.BasicAckAsync(
+    deliveryTag: ea.DeliveryTag,
+    multiple: false
+);
+```
+
+RabbitMQ removes the message from the queue.
+
+```text
+Message
+   ↓
+Consumer
+   ↓
+Successful Processing
+   ↓
+ACK
+   ↓
+Message Removed
+```
+
+---
+
+## ❌ NACK
+
+If all retry attempts fail:
+
+```csharp
+await channel.BasicNackAsync(
+    deliveryTag: ea.DeliveryTag,
+    multiple: false,
+    requeue: false
+);
+```
+
+Because:
+
+```text
+requeue = false
+```
+
+the message is not sent back to the main queue.
+
+Instead, it is routed to the Dead Letter Queue.
+
+---
+
+## 🗃️ Dead Letter Queue
+
+The main queue contains the following Dead Letter configuration:
+
+```csharp
+var arguments = new Dictionary<string, object?>
+{
+    { "x-dead-letter-exchange", "" },
+    { "x-dead-letter-routing-key", "hello_queue_dlq" }
+};
+```
+
+Failed messages are routed to:
 
 ```text
 hello_queue_dlq
 ```
 
-Used for messages that cannot be processed successfully.
+---
+
+## 🚦 Prefetch / QoS
+
+The Consumer uses RabbitMQ QoS configuration:
+
+```csharp
+await channel.BasicQosAsync(
+    prefetchSize: 0,
+    prefetchCount: 1,
+    global: false
+);
+```
+
+This means the Consumer can hold a maximum of:
+
+```text
+1 Unacked Message
+```
+
+at the same time.
+
+Example:
+
+```text
+Queue:
+
+Message 1
+Message 2
+Message 3
+Message 4
+Message 5
+
+           ↓
+
+Consumer receives Message 1
+
+Ready:   4
+Unacked: 1
+
+           ↓
+
+ACK
+
+           ↓
+
+Consumer receives Message 2
+```
+
+This prevents the Consumer from receiving too many unprocessed messages at the same time.
 
 ---
 
-## 💾 Durable Queue & Persistent Messages
+## 💾 Durable Queues & Persistent Messages
 
-The queue is declared as durable:
+Queues are declared as durable:
 
 ```csharp
 durable: true
@@ -261,89 +522,14 @@ var properties = new BasicProperties
 };
 ```
 
+Difference:
+
 ```text
 Durable Queue
-    └── Keeps the queue definition after RabbitMQ restart
+    └── Queue definition survives RabbitMQ restart
 
 Persistent Message
-    └── Marks the message to survive broker restart
-```
-
----
-
-## ✅ ACK
-
-The Consumer uses manual acknowledgement.
-
-```csharp
-await channel.BasicAckAsync(
-    deliveryTag: ea.DeliveryTag,
-    multiple: false
-);
-```
-
-An ACK tells RabbitMQ that the message was processed successfully.
-
-```text
-Message
-   │
-   ▼
-Consumer
-   │
-   ▼
-Successful Processing
-   │
-   ▼
-ACK ✅
-```
-
----
-
-## ❌ NACK
-
-If message processing fails, the Consumer sends a NACK.
-
-```csharp
-await channel.BasicNackAsync(
-    deliveryTag: ea.DeliveryTag,
-    multiple: false,
-    requeue: false
-);
-```
-
-Because `requeue` is set to `false`, the message is not returned to the main queue.
-
-```text
-Message Processing Failed
-          │
-          ▼
-        NACK ❌
-          │
-          ▼
-Dead Letter Queue
-          │
-          ▼
- hello_queue_dlq
-```
-
----
-
-## 🗃️ Dead Letter Queue
-
-The main queue uses Dead Letter configuration:
-
-```csharp
-var arguments = new Dictionary<string, object?>
-{
-    { "x-dead-letter-exchange", "" },
-    { "x-dead-letter-routing-key", "hello_queue_dlq" }
-};
-```
-
-Failed messages are routed to:
-
-```text
-hello_queue_dlq
+    └── Message is marked to survive broker restart
 ```
 
 ---
@@ -365,7 +551,7 @@ if (_connection != null && _connection.IsOpen)
 }
 ```
 
-the existing connection is reused.
+the same connection is reused.
 
 A new channel is created for each publish operation:
 
@@ -374,16 +560,18 @@ using var channel =
     await connection.CreateChannelAsync();
 ```
 
+Architecture:
+
 ```text
-Application
-     │
-     ▼
-Shared Connection
-     │
-     ▼
+ASP.NET Core Application
+        │
+        ▼
+Shared RabbitMQ Connection
+        │
+        ▼
 Channel
-     │
-     ▼
+        │
+        ▼
 Publish Message
 ```
 
@@ -391,24 +579,30 @@ Publish Message
 
 ## 🔒 SemaphoreSlim
 
-`SemaphoreSlim` prevents multiple requests from trying to create a RabbitMQ connection at the same time.
+`SemaphoreSlim` prevents multiple requests from creating a RabbitMQ connection at the same time.
 
 ```csharp
 private readonly SemaphoreSlim _connectionLock = new(1, 1);
 ```
 
+Example:
+
 ```text
-Request 1 ─────► Creates Connection
-Request 2 ─────► Waits
-Request 3 ─────► Waits
+Request 1 ───► Creates Connection
+
+Request 2 ───► Waits
+
+Request 3 ───► Waits
 ```
 
 After the connection is created:
 
 ```text
-Request 1 ─────► Releases Lock
-Request 2 ─────► Uses Existing Connection
-Request 3 ─────► Uses Existing Connection
+Request 1 ───► Releases Lock
+
+Request 2 ───► Uses Existing Connection
+
+Request 3 ───► Uses Existing Connection
 ```
 
 ---
@@ -427,7 +621,7 @@ Implementation:
 RabbitMqPublisher
 ```
 
-Dependency Injection registration:
+Registration:
 
 ```csharp
 builder.Services.AddSingleton<
@@ -435,7 +629,7 @@ builder.Services.AddSingleton<
     RabbitMqPublisher>();
 ```
 
-The Controller receives the service through constructor injection:
+Controller injection:
 
 ```csharp
 public OrdersController(IRabbitMqPublisher publisher)
@@ -446,50 +640,181 @@ public OrdersController(IRabbitMqPublisher publisher)
 
 ---
 
-## 🌐 API Endpoint
+## 🌐 API Endpoints
+
+### Create Order
 
 ```http
 POST /api/orders
+```
+
+Routing key:
+
+```text
+order.created
+```
+
+Flow:
+
+```text
+POST /api/orders
+      ↓
+OrdersController
+      ↓
+RabbitMqPublisher
+      ↓
+order_exchange
+      ↓
+order.created
+      ↓
+hello_queue
+      ↓
+Order Consumer
 ```
 
 Example request:
 
 ```json
 {
-  "orderId": 4,
-  "userId": 9,
-  "total": 1260
+  "orderId": 1,
+  "userId": 25,
+  "total": 1500
 }
-```
-
-```text
-POST /api/orders
-        │
-        ▼
-OrdersController
-        │
-        ▼
-RabbitMqPublisher
-        │
-        ▼
-RabbitMQ
 ```
 
 ---
 
-## 👥 Multiple Consumers
+### Create Notification
 
-RabbitMQ can distribute messages between multiple Consumers listening to the same queue.
-
-```text
-                     ┌────────────► Consumer 1
-                     │
-hello_queue ─────────┤
-                     │
-                     └────────────► Consumer 2
+```http
+POST /api/orders/notification
 ```
 
-This pattern is known as **Competing Consumers**.
+Routing key:
+
+```text
+order.notification
+```
+
+Flow:
+
+```text
+POST /api/orders/notification
+          ↓
+OrdersController
+          ↓
+RabbitMqPublisher
+          ↓
+order_exchange
+          ↓
+order.notification
+          ↓
+notification_queue
+          ↓
+Notification Consumer
+```
+
+Example request:
+
+```json
+{
+  "orderId": 2,
+  "userId": 25,
+  "total": 1500
+}
+```
+
+---
+
+## ⚠️ RabbitMQ Error Handling
+
+If RabbitMQ cannot be reached, the API catches:
+
+```text
+BrokerUnreachableException
+```
+
+and returns:
+
+```text
+503 Service Unavailable
+```
+
+Example:
+
+```text
+RabbitMQ Running
+       ↓
+POST Request
+       ↓
+200 OK
+```
+
+If RabbitMQ is unavailable:
+
+```text
+RabbitMQ Stopped
+       ↓
+POST Request
+       ↓
+BrokerUnreachableException
+       ↓
+503 Service Unavailable
+```
+
+Example response:
+
+```text
+RabbitMQ servisine şu anda ulaşılamıyor.
+```
+
+---
+
+## 🧪 Tested Scenarios
+
+The following scenarios were tested during development:
+
+- Successful order publishing
+- Successful notification publishing
+- Order Consumer processing
+- Notification Consumer processing
+- ACK behavior
+- NACK behavior
+- Retry mechanism
+- Three failed retry attempts
+- Dead Letter Queue routing
+- Prefetch / QoS
+- Multiple queues
+- Multiple consumers
+- Direct Exchange routing
+- Routing key behavior
+- Consumer stopped while messages were published
+- Messages waiting in the queue until the Consumer starts
+- RabbitMQ service unavailable
+- API returning `503 Service Unavailable`
+- RabbitMQ restart
+- Persistent messages
+- Durable queues
+
+---
+
+## ⚙️ Configuration
+
+RabbitMQ configuration is stored in:
+
+```text
+appsettings.json
+```
+
+Example:
+
+```json
+{
+  "RabbitMQ": {
+    "HostName": "localhost"
+  }
+}
+```
 
 ---
 
@@ -499,9 +824,13 @@ This pattern is known as **Competing Consumers**.
 
 RabbitMQ must be installed and running locally.
 
+Default host:
+
 ```text
 localhost
 ```
+
+---
 
 ### 2. Open RabbitMQ Management UI
 
@@ -516,23 +845,27 @@ Username: guest
 Password: guest
 ```
 
-### 3. Start RabbitMqConsumer
+---
 
-Run the `RabbitMqConsumer` project.
+### 3. Start RabbitMqApi and RabbitMqConsumer
 
-Expected output:
+Both projects can be configured as multiple startup projects in Visual Studio.
 
 ```text
-Consumer mesaj bekliyor...
+RabbitMqApi       → Start
+RabbitMqConsumer  → Start
+RabbitMqProducer  → None
 ```
 
-### 4. Start RabbitMqApi
+---
 
-Run the `RabbitMqApi` project and open Swagger.
+### 4. Open Swagger
+
+Use Swagger to send HTTP requests to the API.
+
+---
 
 ### 5. Send an Order
-
-Use:
 
 ```http
 POST /api/orders
@@ -548,42 +881,93 @@ Example:
 }
 ```
 
-### 6. Consumer Output
+Expected flow:
+
+```text
+Swagger
+   ↓
+RabbitMqApi
+   ↓
+order_exchange
+   ↓
+order.created
+   ↓
+hello_queue
+   ↓
+Order Consumer
+   ↓
+ACK
+```
+
+---
+
+### 6. Send a Notification
+
+```http
+POST /api/orders/notification
+```
 
 Example:
 
-```text
-Consumer mesaj bekliyor...
+```json
+{
+  "orderId": 5,
+  "userId": 9,
+  "total": 1260
+}
+```
 
-Order Id: 4
-User Id: 9
-Total: 1260
+Expected flow:
+
+```text
+Swagger
+   ↓
+RabbitMqApi
+   ↓
+order_exchange
+   ↓
+order.notification
+   ↓
+notification_queue
+   ↓
+Notification Consumer
+   ↓
+ACK
 ```
 
 ---
 
 ## 🎯 Purpose
 
-This project was developed to learn and demonstrate the core concepts of RabbitMQ and asynchronous messaging with ASP.NET Core.
+This project was developed to learn and demonstrate RabbitMQ and asynchronous messaging concepts with ASP.NET Core.
 
-Topics covered in the project include:
+The project covers:
 
+- Message Queue concepts
 - Producer
 - Consumer
-- Queue
 - Message Broker
+- Exchange
+- Direct Exchange
+- Routing Key
+- Queue Binding
+- Multiple Queues
+- Multiple Consumers
 - Connection
 - Channel
-- JSON Serialization
-- JSON Deserialization
+- Serialization
+- Deserialization
 - ACK
 - NACK
+- Retry
 - Dead Letter Queue
-- Durable Queue
+- Prefetch / QoS
+- Durable Queues
 - Persistent Messages
-- Competing Consumers
 - Dependency Injection
 - Connection Management
+- Error Handling
+- Monitoring
 
 ---
 
@@ -591,24 +975,68 @@ Topics covered in the project include:
 
 ```text
 C# Object
-   │
-   ▼
+   ↓
 JSON
-   │
-   ▼
+   ↓
 Byte Array
-   │
-   ▼
+   ↓
 RabbitMQ
-   │
-   ▼
+   ↓
 Byte Array
-   │
-   ▼
+   ↓
 JSON
-   │
-   ▼
+   ↓
 C# Object
+```
+
+---
+
+## 📊 Final Message Flow
+
+```text
+                           ┌────────────────────────────┐
+                           │       Swagger / Client     │
+                           └─────────────┬──────────────┘
+                                         │
+                                         ▼
+                           ┌────────────────────────────┐
+                           │      ASP.NET Core API      │
+                           └─────────────┬──────────────┘
+                                         │
+                                         ▼
+                           ┌────────────────────────────┐
+                           │      RabbitMqPublisher     │
+                           └─────────────┬──────────────┘
+                                         │
+                                         ▼
+                           ┌────────────────────────────┐
+                           │       order_exchange       │
+                           └──────────┬───────┬─────────┘
+                                      │       │
+                           order.created      order.notification
+                                      │       │
+                                      ▼       ▼
+                             ┌────────────┐  ┌──────────────────┐
+                             │hello_queue │  │notification_queue│
+                             └─────┬──────┘  └─────────┬────────┘
+                                   │                   │
+                                   ▼                   ▼
+                           ┌──────────────┐     ┌────────────────────┐
+                           │Order Consumer│     │Notification Consumer│
+                           └──────┬───────┘     └─────────┬──────────┘
+                                  │                       │
+                            ┌─────┴─────┐                 │
+                            │           │                 │
+                         Success      Failure            ACK
+                            │           │
+                           ACK       Retry ×3
+                                        │
+                                      NACK
+                                        │
+                                        ▼
+                               ┌──────────────────┐
+                               │ hello_queue_dlq  │
+                               └──────────────────┘
 ```
 
 ---
