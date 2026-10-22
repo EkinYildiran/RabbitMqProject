@@ -33,3 +33,8 @@ Thumbs.db
 
 # Local development settings
 appsettings.Development.json
+
+# Docker ortam değişkenleri ve gizli bilgiler
+.env
+.env.*
+!.env.example

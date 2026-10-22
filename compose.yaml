@@ -1,0 +1,56 @@
+
+services:
+  rabbitmq:
+    image: rabbitmq:4-management
+    container_name: rabbitmq-docker
+    ports:
+      - "5673:5672"
+      - "15673:15672"
+    volumes:
+      - rabbitmq_data:/var/lib/rabbitmq
+    restart: unless-stopped
+
+  sqlserver:
+    image: mcr.microsoft.com/mssql/server:2022-latest
+    container_name: sqlserver-docker
+    environment:
+      ACCEPT_EULA: "Y"
+      MSSQL_PID: Developer
+      MSSQL_SA_PASSWORD: ${MSSQL_SA_PASSWORD}
+    ports:
+      - "1434:1433"
+    volumes:
+      - sqlserver_data:/var/opt/mssql
+    restart: unless-stopped
+
+  
+  producer:
+    image: rabbitmq-producer
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      WorkerSettings__DelayMilliseconds: "100"
+    depends_on:
+      - rabbitmq
+    restart: unless-stopped
+
+  order-worker:
+    image: rabbitmq-order-worker
+    environment:
+      RABBITMQ_HOST: rabbitmq
+    depends_on:
+      - rabbitmq
+    restart: unless-stopped
+
+  database-worker:
+    image: rabbitmq-database-worker
+    environment:
+      RABBITMQ_HOST: rabbitmq
+      ConnectionStrings__DefaultConnection: "Server=sqlserver,1433;Database=RabbitMqOrdersDb;User Id=sa;Password=${MSSQL_SA_PASSWORD};TrustServerCertificate=True;"
+    depends_on:
+      - rabbitmq
+      - sqlserver
+    restart: unless-stopped
+  
+volumes:
+  rabbitmq_data:
+  sqlserver_data:

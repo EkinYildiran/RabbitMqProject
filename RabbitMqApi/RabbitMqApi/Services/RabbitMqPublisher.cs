@@ -86,7 +86,7 @@ namespace RabbitMqApi.Services
                 await channel.BasicPublishAsync(               // yayınlama kısmı
                     exchange: "order_exchange",
                     routingKey: routingKey,
-                    mandatory: false,
+                    mandatory: false,   //mesaj hiçbir kuyruğa gitmezse bana geri döndürülmesi zorunlu değil
                     basicProperties: properties,
                     body: body
                 );
